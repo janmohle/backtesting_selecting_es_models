@@ -1,6 +1,7 @@
 other/
 results/
 run_logs/
+checkpoints/
 
 .Rproj.user
 tikzMetricsDictionary

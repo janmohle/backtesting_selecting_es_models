@@ -1,8 +1,12 @@
 {
     "sortOrder": [
         {
-            "columnIndex": 2,
+            "columnIndex": 4,
             "ascending": false
+        },
+        {
+            "columnIndex": 2,
+            "ascending": true
         }
     ],
     "path": "~/Library/CloudStorage/OneDrive-Personal/01Studium/01Göttingen/Publish_BA/mincer_regression_test"

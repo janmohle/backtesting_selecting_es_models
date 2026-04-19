@@ -88,6 +88,17 @@
       ],
       "Hash": "0cafd6f0500e5deba33be22c46bf6055"
     },
+    "MCS": {
+      "Package": "MCS",
+      "Version": "0.1.3",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "methods"
+      ],
+      "Hash": "11ca2fc1924c1a5c515e8e56b57b87bf"
+    },
     "Matrix": {
       "Package": "Matrix",
       "Version": "1.7-0",

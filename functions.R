@@ -6,11 +6,12 @@ VaR_ES_forecast <- function(data_zoo,
                             mean_spec,
                             dist_spec,
                             tolerance_lvl,
-                            estimate,
-                            par_corr,
-                            fixed_pars,
-                            empirical,
-                            seed_opt=NA){
+                            estimate=TRUE,
+                            par_corr=FALSE,
+                            fixed_pars=NULL,
+                            empirical=FALSE,
+                            seed_opt=NULL,
+                            current_loop=NA_integer_){
   
   # Store last date
   last_date <- tail(index(data_zoo), 1)
@@ -28,19 +29,21 @@ VaR_ES_forecast <- function(data_zoo,
         ugarchfit(spec = garchspec,
                   data = data_zoo,
                   solver = 'hybrid',
-                  solver.control = list(n.restarts = 25,                               # gosolnp: Number of restarts
-                                        n.sim = 500,                                   # gosolnp: Number of initial parameter simulation -> min objective function is taken for optimization initiation
-                                        rseed = (seed_opt+111),                        # gosolnp: Seed for inital parameter simulation
+                  solver.control = list(n.restarts = 10,#25                                       # gosolnp: Number of restarts
+                                        n.sim = 200,#500                                          # gosolnp: Number of initial parameter simulation -> min objective function is taken for optimization initiation
+                                        rseed = if (!is.null(seed_opt)) seed_opt + 111 else NULL, # gosolnp: Seed for inital parameter simulation
                                         trace = 0))
       }, error = function(e){
-        write('1', file = 'run_logs/solver_problems.txt', append = TRUE)
+        write(paste0('\n1: loop ', current_loop),
+              file = 'run_logs/solver_problems.txt', append = TRUE)
         return(NULL)
       }
     )
     
     # Assign NULL to garchfit if solver did not converge
-    if(!is.null(garchfit) & garchfit@fit$convergence == 1){
-      write('2', file = 'run_logs/solver_problems.txt', append = TRUE)
+    if(!is.null(garchfit) && garchfit@fit$convergence == 1){
+      write(paste0('\n2: loop ', current_loop),
+            file = 'run_logs/solver_problems.txt', append = TRUE)
       garchfit <- NULL
     }
     
@@ -51,19 +54,22 @@ VaR_ES_forecast <- function(data_zoo,
           ugarchfit(spec = garchspec,
                     data = data_zoo,
                     solver = 'nloptr',
-                    solver.control = list(solver = 8,                                 # AUGLAG+PRAXIS solver
-                                          ranseed = (seed_opt+111),                   # Seed for random processes
+                    solver.control = list(solver = 8,                                                 # AUGLAG+PRAXIS solver
+                                          maxeval = 1000,#added
+                                          ranseed = if (!is.null(seed_opt)) seed_opt + 111 else NULL, # Seed for random processes
                                           print_level = 0))
         }, error = function(e){
-          write('3', file = 'run_logs/solver_problems.txt', append = TRUE)
+          write(paste0('\n3: loop ', current_loop),
+                file = 'run_logs/solver_problems.txt', append = TRUE)
           return(NULL)
         }
       )
     }
     
     # Assign NULL to garchfit if solver did not converge
-    if(!is.null(garchfit) & garchfit@fit$convergence == 1){
-      write('4', file = 'run_logs/solver_problems.txt', append = TRUE)
+    if(!is.null(garchfit) && garchfit@fit$convergence == 1){
+      write(paste0('\n4: loop ', current_loop),
+            file = 'run_logs/solver_problems.txt', append = TRUE)
       garchfit <- NULL
     }
     
@@ -74,32 +80,36 @@ VaR_ES_forecast <- function(data_zoo,
           ugarchfit(spec = garchspec,
                     data = data_zoo,
                     solver = 'gosolnp',
-                    solver.control = list(n.restarts = 100,
-                                          n.sim = 2000,
-                                          rseed = (seed_opt+231),
+                    solver.control = list(n.restarts = 20,#100
+                                          n.sim = 500,#2000
+                                          rseed = if (!is.null(seed_opt)) seed_opt + 231 else NULL,
                                           trace = 0))
         }, error = function(e){
-          write('5', file = 'run_logs/solver_problems.txt', append = TRUE)
+          write(paste0('\n5: loop ', current_loop),
+                file = 'run_logs/solver_problems.txt', append = TRUE)
           return(NULL)
         }
       )
     }
     
     # Assign NULL to garchfit if solver did not converge
-    if(!is.null(garchfit) & garchfit@fit$convergence == 1){
-      write('6', file = 'run_logs/solver_problems.txt', append = TRUE)
+    if(!is.null(garchfit) && garchfit@fit$convergence == 1){
+      write(paste0('\n6: loop ', current_loop),
+            file = 'run_logs/solver_problems.txt', append = TRUE)
       garchfit <- NULL
     }
     
     # Assign NULL to garchfit if coef contains NAs
-    if(!is.null(garchfit) & anyNA(rugarch::coef(garchfit))){
-      write('7', file = 'run_logs/solver_problems.txt', append = TRUE)
+    if(!is.null(garchfit) && anyNA(rugarch::coef(garchfit))){
+      write(paste0('\n7: loop ', current_loop),
+            file = 'run_logs/solver_problems.txt', append = TRUE)
       garchfit <- NULL
     }
     
     # Assign NULL to garchfit if coef contains infinite numbers
-    if(!is.null(garchfit) & any(is.infinite(rugarch::coef(garchfit)))){
-      write('8', file = 'run_logs/solver_problems.txt', append = TRUE)
+    if(!is.null(garchfit) && any(is.infinite(rugarch::coef(garchfit)))){
+      write(paste0('\n8: loop ', current_loop),
+            file = 'run_logs/solver_problems.txt', append = TRUE)
       garchfit <- NULL
     }
     
@@ -127,16 +137,10 @@ VaR_ES_forecast <- function(data_zoo,
     # Extracting last residual from fit
     residual_t_min_1 <- tail(rugarch::residuals(garchfit), 1)
     
-    # Extracting skewness, shape and lambda parameter (if not prevalent, NA gets assigned)
-    skew <- ifelse('skew' %in% names(coef_fit),
-                   coef_fit['skew'],
-                   NA)
-    shape <- ifelse('shape' %in% names(coef_fit),
-                    coef_fit['shape'],
-                    NA)
-    lambda <- ifelse('ghlambda' %in% names(coef_fit),
-                     coef_fit['ghlambda'],
-                     NA)
+    # Extracting skewness, shape and lambda parameter (if not there, NA gets assigned)
+    skew <- if ('skew' %in% names(coef_fit)) unname(coef_fit['skew']) else NA_real_
+    shape <- if ('shape' %in% names(coef_fit)) unname(coef_fit['shape']) else NA_real_
+    lambda <- if ('ghlambda' %in% names(coef_fit)) unname(coef_fit['ghlambda']) else NA_real_
     
     # Forecasting
     if(estimate){
@@ -230,25 +234,31 @@ VaR_ES_forecast <- function(data_zoo,
                       residual_t_min_1_quadr = as.double(residual_t_min_1)^2,
                       VaR = as.double(VaR),
                       ES = as.double(ES),
-                      vcov_matrix_par = ifelse(par_corr, vcov_matrix_par, NA),
-                      mu_grad = ifelse(par_corr, mu_grad, NA),
-                      sigma_grad = ifelse(par_corr, sigma_grad, NA),
-                      emp_dist_vec = ifelse(empirical, emp_dist_vec, NA))
+                      vcov_matrix_par = if(par_corr) vcov_matrix_par else NA,
+                      mu_grad = if(par_corr) mu_grad else NA,
+                      sigma_grad = if(par_corr) sigma_grad else NA,
+                      emp_dist_vec = if(empirical) emp_dist_vec else NA)
   } else {
+    
+    # Log complete fail of estimation
+    write(paste0('\n\nComplete fail: loop ', current_loop, '\n\n'),
+          file = 'run_logs/solver_problems.txt', append = TRUE)
+    
+    
     results <- tibble(last_date = last_date,
-                      mu = NA,
-                      sigma = NA,
-                      variance = NA,
-                      skew = NA,
-                      shape = NA,
-                      lambda = NA,
-                      dist_spec = NA,
-                      st_dev_t_min_1 = NA,
-                      variance_t_min_1 = NA,
-                      residual_t_min_1 = NA,
-                      residual_t_min_1_quadr = NA,
-                      VaR = NA,
-                      ES = NA,
+                      mu = NA_real_,
+                      sigma = NA_real_,
+                      variance = NA_real_,
+                      skew = NA_real_,
+                      shape = NA_real_,
+                      lambda = NA_real_,
+                      dist_spec = NA_character_,
+                      st_dev_t_min_1 = NA_real_,
+                      variance_t_min_1 = NA_real_,
+                      residual_t_min_1 = NA_real_,
+                      residual_t_min_1_quadr = NA_real_,
+                      VaR = NA_real_,
+                      ES = NA_real_,
                       vcov_matrix_par = NA,
                       mu_grad = NA,
                       sigma_grad = NA,
@@ -259,6 +269,7 @@ VaR_ES_forecast <- function(data_zoo,
                      order.by = results[['last_date']])
   return(results_zoo)
 }
+
 
 #############################################################################
 ###################     Mincer Regression    ################################
@@ -275,6 +286,7 @@ mincer_regression <- function(formula,
                                              white.adjust = white_adjust)
   return(mincer_reg_result$'Pr(>F)'[2])
 }
+
 
 ##########################################################################
 ############# Unconditional coverage test for ES #########################
@@ -297,8 +309,7 @@ ES_uc_backtest <- function(CumVio,
                            emp_dist_code){
   
   # Extracting non-NA cumulative violations
-  not_na_CumVio <- !is.na(CumVio)
-  H_hut <- CumVio[not_na_CumVio]
+  H_hut <- CumVio[!is.na(CumVio)]
   
   # Mean and length of H_hut
   H_mean <- mean(H_hut)
@@ -456,6 +467,7 @@ ES_uc_backtest <- function(CumVio,
   return(as.numeric(p))
 }
 
+
 ##########################################################################
 ############# Conditional coverage test for ES ###########################
 ##########################################################################
@@ -478,8 +490,7 @@ ES_cc_backtest <- function(CumVio,
                            emp_dist_code){
   
   # Extracting non-NA cumulative violations
-  not_na_CumVio <- !is.na(CumVio)
-  H_hut <- CumVio[not_na_CumVio]
+  H_hut <- CumVio[!is.na(CumVio)]
   
   # Length of H_hut
   n <- length(H_hut)
@@ -696,6 +707,101 @@ ES_cc_backtest <- function(CumVio,
   return(as.numeric(p))
 }
 
+
+########################################################################################
+################### Functions convert matrix or vector into string and read it #########
+########################################################################################
+matrix_to_string <- function(m) {
+  res_str <- paste0('matrix(nrow = ', nrow(m), ', ncol = ', ncol(m), ', byrow = FALSE, data = c(')
+  elements <- as.vector(m)
+  res_str <- paste0(res_str, paste(elements, collapse = ", "), '))')
+  return(res_str)
+}
+
+vector_to_string <- function(v){
+  res_vec <- paste0('c(', paste(v, collapse = ", "), ')')
+  return(res_vec)
+}
+
+eval_string_code <- function(str_code){
+  str_res <- eval(parse(text = str_code))
+  return(str_res)
+}
+
+
+####################################################################################
+################### For parallel loop: Create vector with names of test ############
+####################################################################################
+names_of_add_tests <- function(n_boot_de,
+                               n_boot_esr,
+                               estimate,
+                               par_corr){
+  
+  add_tst <- c('UC', 'CC', 'Auxiliary_ESR', 'Strict_ESR')
+  if(!is.null(n_boot_de)){
+    add_tst <- c(add_tst, 'UC_boot', 'CC_boot')
+  }
+  
+  if(!is.null(n_boot_esr)){
+    add_tst <- c(add_tst, 'Auxiliary_ESR_boot', 'Strict_ESR_boot')
+  }
+  
+  if(estimate & par_corr){
+    add_tst <- c(add_tst, 'UC_par_corr', 'CC_par_corr')
+  }
+  
+  add_tst <- c(sort(add_tst[grepl('^UC', add_tst)]),
+               sort(add_tst[grepl('^CC', add_tst)]),
+               sort(add_tst[grepl('^Auxiliary_ESR', add_tst)]),
+               sort(add_tst[grepl('^Strict_ESR', add_tst)]))
+  return(add_tst)
+}
+
+
+##############################################################################
+#############  Automatic lag selection for CC backtest  ######################
+##############################################################################
+auto_lag <- function(y, max_lag=NULL, na_rm=TRUE, q=2.4) {
+  
+  if(na_rm){
+    y <- y[!is.na(y)]
+  } else {
+    if(anyNA(y)){
+      return(NA)
+    }
+  }
+  
+  n <- length(y)
+  
+  if(is.null(max_lag)){
+    max_lag <- floor(sqrt(n))
+  }
+  
+  y <- y - mean(y)
+  
+  if(all(y == 0)){
+    return(1)
+  }
+  
+  auto_cov <- acf(y,lag.max = max_lag, type = 'covariance', plot = FALSE)$acf
+  
+  rob_var <- sapply(1:max_lag, function(j) {
+    mean(y[(1 + j):n]^2 * y[1:(n - j)]^2)
+  })
+  
+  if(any(rob_var == 0)){
+    return(1)
+  }
+  
+  auto_cor_rob_2 <- (auto_cov[2:(max_lag + 1)]^2) / rob_var
+  Q_p  <- n * cumsum(auto_cor_rob_2)
+  
+  penalty <- if(sqrt(n) * max(sqrt(abs(auto_cor_rob_2)), na.rm = TRUE) <= sqrt(q * log(n))) log(n) else 2
+  
+  which.max(Q_p - (1:max_lag) * penalty)
+}
+
+
 #############################################################################
 ################### Parallel estimation Loop ################################
 #############################################################################
@@ -707,26 +813,28 @@ estimation_loop_par <- function(n_loop,
                                 mean_spec_sim,
                                 dist_spec_sim,
                                 fixed_pars_sim,
-                                estimate,
-                                par_corr,
+                                estimate=TRUE,
+                                par_corr=FALSE,
                                 var_spec_est,
                                 mean_spec_est,
                                 dist_spec_est,
-                                fixed_pars_est,
-                                cores,
-                                white_adjust,
-                                seed=NA,
+                                fixed_pars_est=NULL,
+                                cores=1,
+                                white_adjust='hc3',
+                                seed=NULL,
                                 mincer_spec,
-                                execute_additional_tsts,
-                                lags_es_cc,
-                                n_boot_de,
-                                empirical){
+                                execute_additional_tsts=TRUE,
+                                lags_es_cc=NULL,
+                                max_lag_es_cc=NULL,
+                                n_boot_de=NULL,
+                                n_boot_esr=NULL,
+                                empirical=FALSE){
   
   # Clear started_loops.txt and finished_loops.txt
-  write(x = '\n\n',
+  write(x = ' ',
         file = 'run_logs/started_loops.txt',
         append = FALSE)
-  write(x = '\n\n',
+  write(x = ' ',
         file = 'run_logs/finished_loops.txt',
         append = FALSE)
   
@@ -742,17 +850,16 @@ estimation_loop_par <- function(n_loop,
           append = TRUE)
     
     # Set seed for reproducibility of results
-    if(!is.na(seed)){
+    if(!is.null(seed)){
       current_seed <- (seed+i^2-i) %% 2147483647
       set.seed(current_seed)
     } else {
-      current_seed <- NA
+      current_seed <- NULL
     }
     
     # Progress messages
-    if(cores==1){
-      cat(paste0('Iteration Nr.: ', i, '\n'))
-    } else if(i %% cores == 0){
+    if(i %% cores == 0){
+      cat(paste0('Loop ', i, ' started at ', Sys.time(), '\n'))
       write(x = paste0('Loop ', i, ' started at ', Sys.time(), '\n'),
             file = 'run_logs/progress_information.txt',
             append = TRUE)
@@ -776,7 +883,16 @@ estimation_loop_par <- function(n_loop,
       mutate(Date = base::as.Date('2000-01-01') + 1:nrow(sim_matrix))
     garchsimulation_zoo <- zoo(x = garchsimulation_tbl[['Return']],
                                order.by = garchsimulation_tbl[['Date']])
-    #plot_s <<- plot(garchsimulation_zoo)
+    
+    ##TEST
+    # garchsimulation_zoo_s <<- garchsimulation_zoo
+    # plot_s <<- plot(garchsimulation_zoo)
+    # Sys.sleep(time = 2)
+    # plot_s2 <<- garchsimulation_zoo %>% as_tibble() %>%
+    #   mutate(Price = 100 * exp(cumsum(value))) %>%
+    #   select(Price) %>%
+    #   zoo(order.by = index(garchsimulation_zoo)) %>%
+    #   plot()
     
     ##TEST
     #garchsimulation_zoo_s <<- garchsimulation_zoo
@@ -793,7 +909,8 @@ estimation_loop_par <- function(n_loop,
                                                                   par_corr = par_corr,
                                                                   fixed_pars = fixed_pars_est,
                                                                   empirical = empirical,
-                                                                  seed_opt = current_seed),
+                                                                  seed_opt = current_seed,
+                                                                  current_loop = i),
                                 align = 'right',
                                 coredata = FALSE)
     
@@ -807,16 +924,18 @@ estimation_loop_par <- function(n_loop,
     ##TEST
     #VaR_ES_results_tbl_save <<- VaR_ES_results_tbl
     
-    # Report number of NAs in NA_infomation.txt
-    n_NAs <- sum(is.na(VaR_ES_results_tbl[['ES']]))
+    # Log NAs
+    cols_check <- c('Return', 'VaR', 'ES')
+    na_counts <- VaR_ES_results_tbl %>%
+      dplyr::summarise(dplyr::across(all_of(cols_check), ~sum(is.na(.))))
     
-    if(n_NAs > 0){
-      write(paste0('Number of NAs in loop ', i, ': ', n_NAs, '\n'),
+    if(any(na_counts > 0)){
+      write(paste0('\nNumber of NAs in loop ', i, ': ', paste(names(na_counts), na_counts, collapse = ', '), '\n'),
             file = 'run_logs/NA_information.txt',
             append = TRUE)
     }
     
-    # Filter for shortfalls
+    # Filter for shortfalls (NAs are removed automatically)
     shortfall_tbl <- VaR_ES_results_tbl %>%
       dplyr::filter(Return <= VaR) %>%
       mutate(shortfall = Return - ES,
@@ -833,10 +952,36 @@ estimation_loop_par <- function(n_loop,
       # Mincer regression execution
       p_values_vec <- vector()
       for(j in 1:length(mincer_spec)){
-        p_values_vec[j] <- mincer_regression(formula = mincer_spec[[j]][['formula']],
-                                             shortfall_tbl = shortfall_tbl,
-                                             h0 = mincer_spec[[j]][['h0']],
-                                             white_adjust = wa)
+        p_values_vec[j] <- tryCatch(
+          {
+            mincer_regression(formula = mincer_spec[[j]][['formula']],
+                              shortfall_tbl = shortfall_tbl,
+                              h0 = mincer_spec[[j]][['h0']],
+                              white_adjust = wa)
+          }, error = function(e1){
+            
+            # Log fail of first try
+            write(paste(tolerance_lvl, var_spec_sim[['model']], paste(mean_spec_sim, collapse = ' '), dist_spec_sim, 'loop', i, '\n', paste(mincer_spec[[j]][['h0']], collapse = ' ')),
+                  file = 'run_logs/mincer_fail_1.txt', append = TRUE)
+            
+            tryCatch(
+              {
+                # Try again without white adjustment
+                mincer_regression(formula = mincer_spec[[j]][['formula']],
+                                  shortfall_tbl = shortfall_tbl,
+                                  h0 = mincer_spec[[j]][['h0']],
+                                  white_adjust = FALSE)
+              }, error = function(e2){
+                
+                # Log fail of second try
+                write(paste(tolerance_lvl, var_spec_sim[['model']], paste(mean_spec_sim, collapse = ' '), dist_spec_sim, 'loop', i, '\n', paste(mincer_spec[[j]][['h0']], collapse = ' ')),
+                      file = 'run_logs/mincer_fail_2.txt', append = TRUE)
+                # Return NA if error still occures
+                NA_real_
+              }
+            )
+          }
+        )
       }
       
       # Save results
@@ -847,9 +992,9 @@ estimation_loop_par <- function(n_loop,
       
       for(j in 1:length(mincer_spec)){
         result_lst[[result_lst_names[j]]][[paste0('p_', wa)]] <- p_values_vec[j]
-        result_lst[[result_lst_names[j]]][[paste0('p0_01_', wa)]] <- ifelse(p_values_vec[j] < 0.01, 1, 0)
-        result_lst[[result_lst_names[j]]][[paste0('p0_05_', wa)]] <- ifelse(p_values_vec[j] < 0.05, 1, 0)
-        result_lst[[result_lst_names[j]]][[paste0('p0_1_', wa)]] <- ifelse(p_values_vec[j] < 0.1, 1, 0)
+        result_lst[[result_lst_names[j]]][[paste0('p0_01_', wa)]] <- ifelse(p_values_vec[j] <= 0.01, 1, 0)
+        result_lst[[result_lst_names[j]]][[paste0('p0_05_', wa)]] <- ifelse(p_values_vec[j] <= 0.05, 1, 0)
+        result_lst[[result_lst_names[j]]][[paste0('p0_1_', wa)]] <- ifelse(p_values_vec[j] <= 0.1, 1, 0)
       }
       
       # Compute additional tests if execute_additional_tsts = TRUE
@@ -879,11 +1024,32 @@ estimation_loop_par <- function(n_loop,
                               lambda = VaR_ES_results_tbl[['lambda']])
         }
         
+        ##TEST
+        #u_save <<- u
+        
         # Compute cumulative violations
         CumVio <- (1 / tolerance_lvl) * (tolerance_lvl - u) * ifelse(u <= tolerance_lvl, 1, 0)
         
+        # Log NAs in u and CumVio
+        NAs_u <- sum(is.na(u))
+        NAs_CumVio <- sum(is.na(CumVio))
+        
+        if((NAs_u > 0) || (NAs_CumVio > 0)){
+          write(paste0('\nNumber of NAs in loop ', i, ': u ', NAs_u, ' , CumVio ', NAs_CumVio, '\n'),
+                file = 'run_logs/NA_information.txt',
+                append = TRUE)
+        }
+        
+        ##TEST
+        # u_save <<- u
+        # CumVio_save <<- CumVio
+        # print(if(!is.null(lags_es_cc)) lags_es_cc else auto_lag(y = CumVio,
+        #                                                   max_lag = max_lag_es_cc))
+        # plot(acf(CumVio, lag.max = 15))
+        
         # Create vector with names of additional tests
         add_tests <- names_of_add_tests(n_boot_de = n_boot_de,
+                                        n_boot_esr = n_boot_esr,
                                         estimate = estimate,
                                         par_corr = par_corr)
         p_add <- vector(length = length(add_tests))
@@ -896,15 +1062,17 @@ estimation_loop_par <- function(n_loop,
         
         p_add['CC'] <- ES_cc_backtest(CumVio = CumVio,
                                       tolerance_lvl = tolerance_lvl,
-                                      lags = lags_es_cc,
+                                      lags = if(!is.null(lags_es_cc)) lags_es_cc else auto_lag(y = CumVio,
+                                                                                               max_lag = max_lag_es_cc),
                                       par_corr = FALSE)
         
         # Execute unconditional and conditional coverage backtest with bootstrap for ES
-        if(!is.na(n_boot_de)){
-          if(!is.na(seed)){set.seed(current_seed)}
+        if(!is.null(n_boot_de)){
+          if(!is.null(seed)){set.seed(current_seed)}
           shortfall_de_test_boot_res <- tstests::shortfall_de_test(x = u[!is.na(u)],
                                                                    alpha = tolerance_lvl,
-                                                                   lags = lags_es_cc,
+                                                                   lags = if(!is.null(lags_es_cc)) lags_es_cc else auto_lag(y = CumVio,
+                                                                                                                            max_lag = max_lag_es_cc),
                                                                    boot = TRUE,
                                                                    n_boot = n_boot_de)
           
@@ -933,7 +1101,8 @@ estimation_loop_par <- function(n_loop,
           
           p_add['CC_par_corr'] <- ES_cc_backtest(CumVio = CumVio,
                                                  tolerance_lvl = tolerance_lvl,
-                                                 lags = lags_es_cc,
+                                                 lags = if(!is.null(lags_es_cc)) lags_es_cc else auto_lag(y = CumVio,
+                                                                                                          max_lag = max_lag_es_cc),
                                                  par_corr = TRUE,
                                                  est_window = est_window,
                                                  Return = VaR_ES_results_tbl[['Return']],
@@ -951,13 +1120,13 @@ estimation_loop_par <- function(n_loop,
         }
         
         # Create VaR_ES_results_tbl without NAs in Return, VaR and ES
-        if(!exists('VaR_ES_results_tbl_noNA')){
+        #if(!exists('VaR_ES_results_tbl_noNA')){#WHY do I have this? Test if I can remove it
           VaR_ES_results_tbl_noNA <- VaR_ES_results_tbl %>%
             tidyr::drop_na(Return, VaR, ES)
-        }
+        #}
         
         # Execute Auxiliary ESR backtest
-        if(!is.na(seed)){set.seed(current_seed)}
+        if(!is.null(seed)){set.seed(current_seed)}
         p_add['Auxiliary_ESR'] <- esback::esr_backtest(r = VaR_ES_results_tbl_noNA[['Return']],
                                                        q = VaR_ES_results_tbl_noNA[['VaR']],
                                                        e = VaR_ES_results_tbl_noNA[['ES']],
@@ -965,30 +1134,99 @@ estimation_loop_par <- function(n_loop,
                                                        version = 2)[['pvalue_twosided_asymptotic']]
         
         # Execute Strict ESR backtest
-        if(!is.na(seed)){set.seed(current_seed)}
+        if(!is.null(seed)){set.seed(current_seed)}
         p_add['Strict_ESR'] <- esback::esr_backtest(r = VaR_ES_results_tbl_noNA[['Return']],
                                                     e = VaR_ES_results_tbl_noNA[['ES']],
                                                     alpha = tolerance_lvl,
                                                     version = 1)[['pvalue_twosided_asymptotic']]
         
+        # Execute ESR tests with bootstrapping if n_boot_esr is not NULL
+        if(!is.null(n_boot_esr)){
+          
+          # Execute Auxiliary ESR backtest with bootstrap
+          if(!is.null(seed)){set.seed(current_seed)}
+          p_add['Auxiliary_ESR_boot'] <- tryCatch(
+            {
+              esback::esr_backtest(r = VaR_ES_results_tbl_noNA[['Return']],
+                                   q = VaR_ES_results_tbl_noNA[['VaR']],
+                                   e = VaR_ES_results_tbl_noNA[['ES']],
+                                   alpha = tolerance_lvl,
+                                   version = 2,
+                                   B = n_boot_esr)[['pvalue_twosided_bootstrap']]
+            }, error = function(e1){
+              
+              # Retry with different seed
+              tryCatch(
+                {
+                  if(!is.null(seed)){set.seed(current_seed+11)}
+                  esback::esr_backtest(r = VaR_ES_results_tbl_noNA[['Return']],
+                                       q = VaR_ES_results_tbl_noNA[['VaR']],
+                                       e = VaR_ES_results_tbl_noNA[['ES']],
+                                       alpha = tolerance_lvl,
+                                       version = 2,
+                                       B = n_boot_esr)[['pvalue_twosided_bootstrap']]
+                }, error = function(e2){
+                  # Log fail of second try
+                  write(paste(tolerance_lvl, var_spec_sim[['model']], paste(mean_spec_sim, collapse = ' '), dist_spec_sim, 'loop', i, '\n'),
+                        file = 'run_logs/auxiliary_esr_boot_fail.txt', append = TRUE)
+                  
+                  # Return NA if error appears again
+                  NA_real_
+                }
+              )
+            }
+          )
+          
+          # Execute Strict ESR backtest with bootstrap
+          if(!is.null(seed)){set.seed(current_seed)}
+          p_add['Strict_ESR_boot'] <- tryCatch(
+            {
+              esback::esr_backtest(r = VaR_ES_results_tbl_noNA[['Return']],
+                                   e = VaR_ES_results_tbl_noNA[['ES']],
+                                   alpha = tolerance_lvl,
+                                   version = 1,
+                                   B = n_boot_esr)[['pvalue_twosided_bootstrap']]
+            }, error = function(e1){
+              
+              # Retry with different seed
+              tryCatch(
+                {
+                  if(!is.null(seed)){set.seed(current_seed+11)}
+                  esback::esr_backtest(r = VaR_ES_results_tbl_noNA[['Return']],
+                                       e = VaR_ES_results_tbl_noNA[['ES']],
+                                       alpha = tolerance_lvl,
+                                       version = 1,
+                                       B = n_boot_esr)[['pvalue_twosided_bootstrap']]
+                }, error = function(e2){
+                  # Log fail of second try
+                  write(paste(tolerance_lvl, var_spec_sim[['model']], paste(mean_spec_sim, collapse = ' '), dist_spec_sim, 'loop', i, '\n'),
+                        file = 'run_logs/strict_esr_boot_fail.txt', append = TRUE)
+                  
+                  # Return NA if error appears again
+                  NA_real_
+                }
+              )
+            }
+          )
+        }
+        
         # Store result
         for(add_tst in add_tests){
           result_lst[[add_tst]][[paste0('p_', wa)]] <- p_add[add_tst]
-          result_lst[[add_tst]][[paste0('p0_01_', wa)]] <- ifelse(p_add[add_tst] < 0.01, 1, 0)
-          result_lst[[add_tst]][[paste0('p0_05_', wa)]] <- ifelse(p_add[add_tst] < 0.05, 1, 0)
-          result_lst[[add_tst]][[paste0('p0_1_', wa)]] <- ifelse(p_add[add_tst] < 0.1, 1, 0)
+          result_lst[[add_tst]][[paste0('p0_01_', wa)]] <- ifelse(p_add[add_tst] <= 0.01, 1, 0)
+          result_lst[[add_tst]][[paste0('p0_05_', wa)]] <- ifelse(p_add[add_tst] <= 0.05, 1, 0)
+          result_lst[[add_tst]][[paste0('p0_1_', wa)]] <- ifelse(p_add[add_tst] <= 0.1, 1, 0)
         }
       }
     }
     
     # Save seed number and number of observations that entered Mincer regressions
     result_lst[['n_obs_mincer']] <- n_obs_mincer
-    result_lst[['seed']] <- current_seed
+    result_lst[['seed']] <- if(!is.null(seed)) current_seed else NA_integer_
     
     # Progress messages
-    if(cores==1){
-      cat(paste0('Finished iteration no.: ', i, '\n'))
-    } else if(i %% cores == 0){
+    if(i %% cores == 0){
+      cat(paste0('Loop ', i, ' finished at ', Sys.time(), '\n'))
       write(x = paste0('Loop ', i, ' finished at ', Sys.time(), '\n'),
             file = 'run_logs/progress_information.txt',
             append = TRUE)
@@ -1013,6 +1251,7 @@ estimation_loop_par <- function(n_loop,
   # Create vector with names of executed tests
   if(execute_additional_tsts){
     add_tests <- names_of_add_tests(n_boot_de = n_boot_de,
+                                    n_boot_esr = n_boot_esr,
                                     estimate = estimate,
                                     par_corr = par_corr)
     test_names <- c(names(mincer_spec), add_tests)
@@ -1050,169 +1289,34 @@ estimation_loop_par <- function(n_loop,
   return(result)
 }
 
-####################################################################################
-################### For parallel loop: Create vector with names of test ############
-####################################################################################
-names_of_add_tests <- function(n_boot_de,
-                               estimate,
-                               par_corr){
-  
-  add_tst <- c('UC', 'CC', 'Auxiliary_ESR', 'Strict_ESR')
-  if(!is.na(n_boot_de)){
-    add_tst <- c(add_tst, 'UC_boot', 'CC_boot')
-  }
-  if(estimate & par_corr){
-    add_tst <- c(add_tst, 'UC_par_corr', 'CC_par_corr')
-  }
-  
-  add_tst <- c(sort(add_tst[grepl('^UC', add_tst)]), sort(add_tst[grepl('^CC', add_tst)]), 'Auxiliary_ESR', 'Strict_ESR')
-  return(add_tst)
-}
 
-#############################################################################
-################### Create result matrix     ################################
-#############################################################################
-create_result_matrix <- function(result_lst,
-                                 na_rm = FALSE){
-  result_lst[['n_obs_mincer']] <- NULL
-  result_lst[['seed']] <- NULL
+##############################################################################
+###  Kupiec test: Unconditional Coverage VaR  ################################
+##############################################################################
+VaR_Kupiec_backtest <- function(n_VaR_exceeded,
+                                oos_window,
+                                tolerance_lvl){
   
-  row_names <- names(result_lst)
+  # Calculating number of non-exceedences, exceedences and proportion of exceedences
+  n1 <- n_VaR_exceeded
+  n0 <- oos_window - n1
+  prop_exceeded <- n1 / (n1 + n0)
   
-  col_names <- names(result_lst[[1]])
-  col_names <- col_names[!startsWith(col_names, 'p_')]
+  # Likelihood Ratio Test
+  # Likelihood of unrestricted (L_ur) and restricted (L_r) model
+  L_ur <- prop_exceeded ^ n1 * (1 - prop_exceeded) ^ n0
+  L_r <- tolerance_lvl ^ n1 * (1 - tolerance_lvl) ^ n0
   
-  result_matrix <- matrix(nrow = length(row_names), ncol = length(col_names))
-  rownames(result_matrix) <- row_names
-  colnames(result_matrix) <- col_names
+  # Test statistic and assign name speci_dist
+  LR <- -2 * log(L_r / L_ur)
   
-  for(row in row_names){
-    for(col in col_names){
-      result_matrix[row, col] <- round(mean(result_lst[[row]][[col]], na.rm = na_rm), digits = 3)
-    }
-  }
-  return(result_matrix)
-}
-
-#############################################################################
-################### Write results into txt file     #########################
-#############################################################################
-write_results_to_txt <- function(name,
-                                 txt_file){
-  matrix <- get(paste0(name, '_matrix'))
-  lst <- get(name)
+  # p value (LR ~ X^2(1)) and assign name speci_dist
+  p <- pchisq(q = LR,
+              df = 1,
+              lower.tail = FALSE)
   
-  write(paste0('\n\n', toupper(gsub('result_', '', name)), ':'), file = txt_file, append = TRUE)
-  write(paste0('Number of obs. in Mincer-Regressions: ', mean(lst[['n_obs_mincer']], na.rm = TRUE)), file = txt_file, append = TRUE)
-  capture.output(print(matrix), file = txt_file, append = TRUE)
-}
-
-########################################################################################
-################### Functions convert matrix or vector into string and read it #########
-########################################################################################
-matrix_to_string <- function(m) {
-  res_str <- paste0('matrix(nrow = ', nrow(m), ', ncol = ', ncol(m), ', byrow = FALSE, data = c(')
-  elements <- as.vector(m)
-  res_str <- paste0(res_str, paste(elements, collapse = ", "), '))')
-  return(res_str)
-}
-
-vector_to_string <- function(v){
-  res_vec <- paste0('c(', paste(v, collapse = ", "), ')')
-  return(res_vec)
-}
-
-eval_string_code <- function(str_code){
-  str_res <- eval(parse(text = str_code))
-  return(str_res)
-}
-
-#######################################################################################
-################### Function creates LaTeX table body of results              #########
-#######################################################################################
-matrix_to_latex_body <- function(mat,
-                                 double_hline = NA) {
-  col_names <- paste(colnames(mat), collapse = ' & ')
-  lines <- paste0('No. & ', col_names, ' \\\\\n\\hline')
-  
-  for (i in 1:nrow(mat)){
-    formatted_row <- formatC(mat[i, ], format = 'f', digits = 3)
-    row <- paste(formatted_row, collapse = ' & ')
-    row_line <- paste0(i, ' & ', row, ' \\\\')
-    
-    if (i %in% double_hline) {
-      row_line <- paste0(row_line, '\n\\hline\n\\hline')
-    } else {
-      row_line <- paste0(row_line, '\n\\hline')
-    }
-    lines <- c(lines, row_line)
-  }
-  
-  return(paste(lines, collapse = '\n'))
-}
-
-#############################################################################
-################### Write results to LaTeX format    ########################
-#############################################################################
-write_results_to_latex <- function(name,
-                                   txt_file,
-                                   double_hline = NA){
-  if(!is.na(txt_file)){
-    matrix <- get(paste0(name, '_matrix'))
-    lst <- get(name)
-    
-    write(paste0('\n\n', toupper(gsub('result_', '', name)), ':'), file = txt_file, append = TRUE)
-    write(paste0('Number of obs. in Mincer-Regressions: ', mean(lst[['n_obs_mincer']])), file = txt_file, append = TRUE)
-    capture.output(cat(matrix_to_latex_body(mat = matrix, double_hline = double_hline)), file = txt_file, append = TRUE)
-  }
-}
-
-###################################################################################
-######## Create barplot from result matrix for specified white adjustment #########
-###################################################################################
-create_result_barplot <- function(result_mat,
-                                  white_adjust_name){
-  
-  # Create vector with rejection proportions
-  rejection_prop <- as_tibble(result_mat) %>%
-    select(contains(white_adjust_name)) %>%
-    mutate(p0_01 = .data[[paste0('p0_01_', white_adjust_name)]]) %>%
-    mutate(p0_05 = .data[[paste0('p0_05_', white_adjust_name)]] - p0_01) %>%
-    mutate(p0_1 = .data[[paste0('p0_1_', white_adjust_name)]] - (p0_01 + p0_05)) %>%
-    select(p0_01, p0_05, p0_1) %>%
-    as.matrix() %>%
-    t() %>%
-    as.vector()
-  
-  # Create tibble with data for plot
-  data_tbl <- tibble(category = rep(paste('No.', 1:nrow(result_mat)), each = 3),
-                     part = rep(c('Size 0.01', 'Size 0.05', 'Size 0.1'), times = nrow(result_mat)),
-                     value = rejection_prop) %>%
-    mutate(category = factor(category, levels = rev(paste('No.', 1:nrow(result_mat)))),
-           part = factor(part, levels = c('Size 0.1', 'Size 0.05', 'Size 0.01')))
-  
-  
-  # Plot
-  ggplot(data_tbl, aes(x = category, y = value, fill = part)) +
-    geom_col(width = 0.4, color = 'black') +
-    geom_hline(yintercept = 0.01, color = '#c6dbef', linewidth = 1) +
-    geom_hline(yintercept = 0.05, color = '#6baed6', linewidth = 1) +
-    geom_hline(yintercept = 0.1,  color = '#2171b5', linewidth = 1) +
-    scale_fill_manual(values = c('Size 0.01' = '#c6dbef',
-                                 'Size 0.05' = '#6baed6',
-                                 'Size 0.1' = '#2171b5'),
-                      guide = guide_legend(reverse = TRUE)) +
-    scale_y_continuous(breaks = c(0.01, 0.05, 0.1, seq(0.15, 1, by = 0.05)),
-                       labels = scales::number_format(accuracy = 0.01)) +
-    coord_flip() +
-    theme_minimal(base_size = 12) +
-    labs(x = '',
-         y = 'Rejection Proportion',
-         title = 'Empirical Rejection Proportions at Nominal Levels',
-         fill = 'Nominal Levels') +
-    theme(axis.text.y = element_text(size = 9),
-          panel.grid.major.y = element_blank(),
-          panel.grid.minor.y = element_blank(),
-          panel.grid.major.x = element_line(color = 'grey70'),
-          panel.grid.minor.x = element_line(color = 'grey85'))
+  #Return results
+  results <- list(LR = LR,
+                  p = p)
+  return(results)
 }
