@@ -1,1 +1,1 @@
-This is an ongoing simulation project where I am testing Mincer-Zarnowitz-Regression for ES validation
+This is an ongoing simulation study where I compare different expected shortfall backtests and evaluate a model selection procedure.
