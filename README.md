@@ -1,1 +1,1 @@
-This is an ongoing simulation study where I compare different expected shortfall backtests and evaluate a model selection procedure.
+This is an ongoing simulation study in which I compare different expected shortfall backtests and evaluate a model selection procedure.
